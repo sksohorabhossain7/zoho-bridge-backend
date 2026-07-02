@@ -229,7 +229,7 @@ class SyncManager
             if ($settings->sync_by_collection && count($allowedCollections) > 0) {
                 $nodes = $product['collections']['nodes'] ?? [];
                 $productCollectionIds = collect($nodes)->pluck('id')->toArray();
-                
+
                 $hasCommonCollection = count(array_intersect($productCollectionIds, $allowedCollections)) > 0;
                 if (!$hasCommonCollection) {
                     Log::info("Skipping product {$title}: collection filter mismatch");
@@ -475,9 +475,9 @@ class SyncManager
         if ($settings->sync_by_collection && count($allowedCollections) > 0) {
             $shopifyToken = $this->shopifyService->getAccessToken($token->shop);
             $pID = "gid://shopify/Product/" . $payload['id'];
-            
+
             $productCollections = $this->shopifyService->fetchProductCollections($token->shop, $shopifyToken, $pID);
-            
+
             $hasCommonCollection = count(array_intersect($productCollections, $allowedCollections)) > 0;
             if (!$hasCommonCollection) {
                 Log::info("Skipping webhook sync for {$title}: collection filter mismatch");
@@ -490,7 +490,7 @@ class SyncManager
         if ($settings->sync_by_tags && count($allowedTags) > 0) {
             $tagsStr = $payload['tags'] ?? '';
             $productTags = array_map('trim', explode(',', $tagsStr));
-            
+
             $hasCommonTag = count(array_intersect($productTags, $allowedTags)) > 0;
             if (!$hasCommonTag) {
                 Log::info("Skipping webhook sync for {$title}: tag filter mismatch");
