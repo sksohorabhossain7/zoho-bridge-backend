@@ -210,7 +210,9 @@ class SyncManager
 
         $products = $this->shopifyService->fetchProducts($token->shop, $shopifyToken);
 
-        $allowedCollections = $settings->selected_collections ?? [];
+        $allowedCollections = array_filter(array_map(function ($item) {
+            return is_array($item) ? ($item['id'] ?? $item) : (is_object($item) ? ($item->id ?? $item) : $item);
+        }, $settings->selected_collections ?? []));
         $allowedTags = $settings->selected_tags ?? [];
 
         foreach ($products as $product) {
@@ -261,7 +263,9 @@ class SyncManager
                 }
 
                 if ($sku === '') {
-                    Log::info("Skipping variant " . ($variant['id'] ?? '') . ": missing SKU/Barcode identifier matching settings (" . $skuMapping . ")");
+                    $msg = "Skipping variant " . ($variant['id'] ?? '') . ": missing SKU/Barcode identifier matching settings (" . $skuMapping . ")";
+                    Log::info($msg);
+                    $this->createLog($token->shop, 'product', 'error', $msg, "Product: {$title}");
                     continue;
                 }
 
@@ -517,7 +521,9 @@ class SyncManager
         }
 
         // Collection Filter
-        $allowedCollections = $settings->selected_collections ?? [];
+        $allowedCollections = array_filter(array_map(function ($item) {
+            return is_array($item) ? ($item['id'] ?? $item) : (is_object($item) ? ($item->id ?? $item) : $item);
+        }, $settings->selected_collections ?? []));
         if ($settings->sync_by_collection && count($allowedCollections) > 0) {
             $shopifyToken = $this->shopifyService->getAccessToken($token->shop);
             $pID = "gid://shopify/Product/" . $payload['id'];
@@ -561,7 +567,9 @@ class SyncManager
             }
 
             if ($sku === '') {
-                Log::info("Skipping webhook variant processing: missing SKU/Barcode identifier matching settings (" . $skuMapping . ")");
+                $msg = "Skipping webhook variant processing: missing SKU/Barcode identifier matching settings (" . $skuMapping . ")";
+                Log::info($msg);
+                $this->createLog($token->shop, 'product_sync_webhook', 'error', $msg, "Product: {$title} (Variant ID: " . ($variant['id'] ?? '') . ")");
                 continue;
             }
 

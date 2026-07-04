@@ -88,7 +88,7 @@ class SyncController extends Controller
         $perPage = (int) $request->query('per_page', 50);
 
         try {
-            $query = SyncLog::where('shop_domain', $shopDomain);
+            $query = SyncLog::where('shop', $shopDomain);
             $total = $query->count();
             
             $logs = $query->orderBy('created_at', 'desc')
