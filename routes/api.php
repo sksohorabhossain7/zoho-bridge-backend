@@ -25,6 +25,8 @@ Route::post('/webhooks/shopify/product', [SyncController::class, 'handleShopifyW
 Route::get('/zoho/status', [ZohoAuthController::class, 'status']);
 Route::get('/zoho/organizations', [ZohoAuthController::class, 'getOrganizations']);
 Route::get('/zoho/configuration', [ZohoAuthController::class, 'getConfiguration']);
+Route::get('/zoho/accounts', [ZohoAuthController::class, 'getAccounts']);
+Route::get('/zoho/taxes', [ZohoAuthController::class, 'getTaxes']);
 Route::post('/zoho/update-configuration', [ZohoAuthController::class, 'updateConfiguration']);
 Route::get('/zoho/warehouses', [ZohoAuthController::class, 'getWarehouses']);
 

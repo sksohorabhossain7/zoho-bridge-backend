@@ -54,7 +54,12 @@ class SyncController extends Controller
             if (!empty($zohoItemID)) {
                 $this->syncManager->syncSingleZohoItem($token, $zohoItemID);
             } else {
-                $this->syncManager->syncShopProducts($token);
+                $settings = ProductSettings::where('shop', $token->shop)->first();
+                if ($settings && $settings->sync_direction === 'shopify-to-zoho') {
+                    $this->syncManager->syncShopifyProductsToZoho($token);
+                } else {
+                    $this->syncManager->syncShopProducts($token);
+                }
             }
 
             return response()->json([

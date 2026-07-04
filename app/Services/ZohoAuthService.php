@@ -82,8 +82,6 @@ class ZohoAuthService
         $apiUrl = $this->getApiUrlForRegion($token->region);
         $url = rtrim($accountsUrl, '/') . '/oauth/v2/token';
 
-        Log::info("Requesting Zoho access token via Client Credentials flow for shop: {$token->shop} at URL: {$url}");
-
         $response = Http::asForm()->post($url, [
             'grant_type' => 'client_credentials',
             'client_id' => $token->clientId,
@@ -141,8 +139,8 @@ class ZohoAuthService
         $now = Carbon::now('UTC');
 
         // Check if access token is empty, expiresAt is empty, or token is within 5 minutes of expiring
-        $shouldRefresh = empty($token->accessToken) || 
-                         empty($token->expiresAt) || 
+        $shouldRefresh = empty($token->accessToken) ||
+                         empty($token->expiresAt) ||
                          Carbon::parse($token->expiresAt, 'UTC')->subMinutes(5)->lessThan($now);
 
         if ($shouldRefresh) {

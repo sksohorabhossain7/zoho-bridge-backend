@@ -143,6 +143,7 @@ class ShopifyService
             productVariant(id: $id) {
                 id
                 sku
+                barcode
                 price
                 inventoryItem {
                     id
@@ -222,6 +223,7 @@ class ShopifyService
                             id
                             title
                             sku
+                            barcode
                             price
                             inventoryItem {
                                 id

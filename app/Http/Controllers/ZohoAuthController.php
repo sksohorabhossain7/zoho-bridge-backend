@@ -77,6 +77,35 @@ class ZohoAuthController extends Controller
     }
 
     /**
+     * Get Zoho accounts.
+     *
+     * @param Request $request
+     * @return JsonResponse
+     */
+    public function getAccounts(Request $request): JsonResponse
+    {
+        $shopDomain = $request->query('shop');
+        if (empty($shopDomain)) {
+            return response()->json(['error' => 'Missing shop domain parameter'], 400);
+        }
+
+        try {
+            $token = ZohoToken::where('shop', $shopDomain)->first();
+            if (!$token || empty($token->organization_id)) {
+                return response()->json(['accounts' => []]);
+            }
+
+            $accounts = $this->zohoService->fetchAccounts($shopDomain, $token->organization_id);
+            return response()->json([
+                'accounts' => $accounts,
+            ]);
+        } catch (Exception $e) {
+            Log::error("Failed to fetch Zoho accounts for shop {$shopDomain}: " . $e->getMessage());
+            return response()->json(['error' => $e->getMessage()], 500);
+        }
+    }
+
+    /**
      * Get active Zoho configuration token record.
      *
      * @param Request $request
@@ -116,6 +145,11 @@ class ZohoAuthController extends Controller
         $region = $request->json('region');
         $organizationID = $request->json('organizationID');
         $organizationName = $request->json('organizationName');
+        $skuMapping = $request->json('skuMapping');
+        $zohoCustomField = $request->json('zohoCustomField');
+        $saleInvoiceJournal = $request->json('saleInvoiceJournal');
+        $enableFixedTax = $request->json('enableFixedTax');
+        $taxType = $request->json('taxType');
 
         if (empty($shopDomain)) {
             return response()->json(['error' => 'Missing shop parameter'], 400);
@@ -133,6 +167,11 @@ class ZohoAuthController extends Controller
             $token->clientId = $clientId;
             $token->clientSecret = $clientSecret;
             $token->region = $region;
+            $token->sku_mapping = $skuMapping ?? 'sku';
+            $token->zoho_custom_field = $zohoCustomField;
+            $token->sale_invoice_journal = $saleInvoiceJournal;
+            $token->enable_fixed_tax = filter_var($enableFixedTax, FILTER_VALIDATE_BOOLEAN);
+            $token->tax_type = $taxType;
 
             // Map region to server and domain
             if (!empty($region)) {
@@ -165,6 +204,39 @@ class ZohoAuthController extends Controller
         } catch (Exception $e) {
             Log::error("Failed to update Zoho configuration for shop {$shopDomain}: " . $e->getMessage());
             return response()->json(['error' => 'Failed to save configuration: ' . $e->getMessage()], 500);
+        }
+    }
+
+    /**
+     * Get Zoho taxes.
+     *
+     * @param Request $request
+     * @return JsonResponse
+     */
+    public function getTaxes(Request $request): JsonResponse
+    {
+        $shopDomain = $request->query('shop');
+        if (empty($shopDomain)) {
+            return response()->json(['error' => 'Missing shop parameter'], 400);
+        }
+
+        try {
+            $token = ZohoToken::where('shop', $shopDomain)->first();
+            if (!$token) {
+                return response()->json(['error' => 'Shop not connected'], 404);
+            }
+
+            if (empty($token->organizationID)) {
+                return response()->json(['taxes' => []]);
+            }
+
+            $taxes = $this->zohoService->fetchTaxes($shopDomain, $token->organizationID);
+            return response()->json([
+                'taxes' => $taxes,
+            ]);
+        } catch (Exception $e) {
+            Log::error("Failed to fetch taxes for shop {$shopDomain}: " . $e->getMessage());
+            return response()->json(['error' => $e->getMessage()], 500);
         }
     }
 

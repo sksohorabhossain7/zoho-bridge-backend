@@ -58,9 +58,9 @@ class ZohoService
     {
         $token = $this->authService->ensureValidToken($shopDomain);
         $apiDomain = $this->getApiDomain($token);
-        
+
         $url = rtrim($apiDomain, '/') . '/books/v3/items';
-        
+
         $response = Http::withHeaders($this->getHeaders($token))->get($url, [
             'organization_id' => $orgID,
             'per_page' => 1,
@@ -73,7 +73,7 @@ class ZohoService
         }
 
         $result = $response->json();
-        
+
         if (isset($result['count'])) {
             return (int) $result['count'];
         }
@@ -104,13 +104,13 @@ class ZohoService
     {
         $token = $this->authService->ensureValidToken($shopDomain);
         $apiDomain = $this->getApiDomain($token);
-        
+
         $allItems = [];
         $page = 1;
 
         while (true) {
             $url = rtrim($apiDomain, '/') . '/books/v3/items';
-            
+
             $response = Http::withHeaders($this->getHeaders($token))->get($url, [
                 'organization_id' => $orgID,
                 'sort_column' => 'last_modified_time',
@@ -127,7 +127,7 @@ class ZohoService
             $allItems = array_merge($allItems, $items);
 
             $hasMore = $result['page_context']['has_more_page'] ?? false;
-            
+
             // Limit to 5 pages for safety in initial sync (same as Go app)
             if (!$hasMore || $page >= 5) {
                 break;
@@ -151,9 +151,9 @@ class ZohoService
     {
         $token = $this->authService->ensureValidToken($shopDomain);
         $apiDomain = $this->getApiDomain($token);
-        
+
         $url = rtrim($apiDomain, '/') . "/books/v3/items/{$itemID}";
-        
+
         $response = Http::withHeaders($this->getHeaders($token))->get($url, [
             'organization_id' => $orgID,
         ]);
@@ -177,10 +177,8 @@ class ZohoService
     {
         $token = $this->authService->ensureValidToken($shopDomain);
         $apiDomain = $this->getApiDomain($token);
-        
+
         $url = rtrim($apiDomain, '/') . '/books/v3/organizations';
-        
-        Log::info("Fetching Zoho organizations for shop {$shopDomain} using URL: {$url}");
 
         $response = Http::withHeaders($this->getHeaders($token))->get($url);
 
@@ -209,9 +207,9 @@ class ZohoService
     {
         $token = $this->authService->ensureValidToken($shopDomain);
         $apiDomain = $this->getApiDomain($token);
-        
+
         $url = rtrim($apiDomain, '/') . '/books/v3/items';
-        
+
         $params = [
             'organization_id' => $orgID,
             'page' => $page,
@@ -236,7 +234,7 @@ class ZohoService
         }
 
         $result = $response->json();
-        
+
         return [
             $result['items'] ?? [],
             $result['page_context'] ?? null,
@@ -255,9 +253,9 @@ class ZohoService
     {
         $token = $this->authService->ensureValidToken($shopDomain);
         $apiDomain = $this->getApiDomain($token);
-        
+
         $url = rtrim($apiDomain, '/') . '/books/v3/locations';
-        
+
         $response = Http::withHeaders($this->getHeaders($token))->get($url, [
             'organization_id' => $orgID,
         ]);
@@ -283,9 +281,9 @@ class ZohoService
     {
         $token = $this->authService->ensureValidToken($shopDomain);
         $apiDomain = $this->getApiDomain($token);
-        
+
         $url = rtrim($apiDomain, '/') . '/books/v3/items';
-        
+
         $response = Http::withHeaders($this->getHeaders($token))
             ->withQueryParameters(['organization_id' => $orgID])
             ->post($url, $itemData);
@@ -295,7 +293,7 @@ class ZohoService
         }
 
         $result = $response->json();
-        
+
         if (!isset($result['item'])) {
             throw new Exception("Zoho createItem missing item node in response: {$response->body()}");
         }
@@ -317,9 +315,9 @@ class ZohoService
     {
         $token = $this->authService->ensureValidToken($shopDomain);
         $apiDomain = $this->getApiDomain($token);
-        
+
         $url = rtrim($apiDomain, '/') . "/books/v3/items/{$itemID}";
-        
+
         $response = Http::withHeaders($this->getHeaders($token))
             ->withQueryParameters(['organization_id' => $orgID])
             ->put($url, $itemData);
@@ -329,11 +327,105 @@ class ZohoService
         }
 
         $result = $response->json();
-        
+
         if (!isset($result['item'])) {
             throw new Exception("Zoho updateItem missing item node in response: {$response->body()}");
         }
 
         return $result['item'];
+    }
+
+    /**
+     * Fetch a Zoho item by its SKU.
+     *
+     * @param string $shopDomain
+     * @param string $orgID
+     * @param string $sku
+     * @return array|null
+     * @throws Exception
+     */
+    public function fetchItemBySku(string $shopDomain, string $orgID, string $sku): ?array
+    {
+        $token = $this->authService->ensureValidToken($shopDomain);
+        $apiDomain = $this->getApiDomain($token);
+
+        $url = rtrim($apiDomain, '/') . '/books/v3/items';
+
+        $response = Http::withHeaders($this->getHeaders($token))->get($url, [
+            'organization_id' => $orgID,
+            'sku' => $sku,
+        ]);
+
+        if ($response->failed()) {
+            Log::error("Zoho fetchItemBySku API error: {$response->status()} - {$response->body()}");
+            return null;
+        }
+
+        $result = $response->json();
+        $items = $result['items'] ?? [];
+
+        foreach ($items as $item) {
+            if (isset($item['sku']) && strtolower($item['sku']) === strtolower($sku)) {
+                return $item;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Fetch accounts from Zoho Books Chart of Accounts.
+     *
+     * @param string $shopDomain
+     * @param string $orgID
+     * @return array
+     * @throws Exception
+     */
+    public function fetchAccounts(string $shopDomain, string $orgID): array
+    {
+        $token = $this->authService->ensureValidToken($shopDomain);
+        $apiDomain = $this->getApiDomain($token);
+
+        $url = rtrim($apiDomain, '/') . '/books/v3/chartofaccounts';
+
+        $response = Http::withHeaders($this->getHeaders($token))->get($url, [
+            'organization_id' => $orgID,
+        ]);
+
+        if ($response->failed()) {
+            Log::error("Zoho fetchAccounts API error: {$response->status()} - {$response->body()}");
+            return [];
+        }
+
+        $result = $response->json();
+        return $result['chartofaccounts'] ?? [];
+    }
+
+    /**
+     * Fetch all Zoho tax profiles.
+     *
+     * @param string $shopDomain
+     * @param string $orgID
+     * @return array
+     * @throws Exception
+     */
+    public function fetchTaxes(string $shopDomain, string $orgID): array
+    {
+        $token = $this->authService->ensureValidToken($shopDomain);
+        $apiDomain = $this->getApiDomain($token);
+
+        $url = rtrim($apiDomain, '/') . '/books/v3/settings/taxes';
+
+        $response = Http::withHeaders($this->getHeaders($token))->get($url, [
+            'organization_id' => $orgID,
+        ]);
+
+        if ($response->failed()) {
+            Log::error("Zoho fetchTaxes API error: {$response->status()} - {$response->body()}");
+            return [];
+        }
+
+        $result = $response->json();
+        return $result['taxes'] ?? [];
     }
 }

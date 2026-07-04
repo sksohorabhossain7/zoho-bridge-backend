@@ -16,9 +16,13 @@ class ZohoToken extends Model
         'organization_id',
         'organization_name',
         'last_product_sync_at',
-        'client_id',
         'client_secret',
         'region',
+        'sku_mapping',
+        'zoho_custom_field',
+        'sale_invoice_journal',
+        'enable_fixed_tax',
+        'tax_type',
     ];
 
     /**
@@ -67,6 +71,11 @@ class ZohoToken extends Model
             'last_product_sync_at' => 'lastProductSyncAt',
             'client_id' => 'clientId',
             'client_secret' => 'clientSecret',
+            'sku_mapping' => 'skuMapping',
+            'zoho_custom_field' => 'zohoCustomField',
+            'sale_invoice_journal' => 'saleInvoiceJournal',
+            'enable_fixed_tax' => 'enableFixedTax',
+            'tax_type' => 'taxType',
         ];
 
         foreach ($camelKeys as $snake => $camel) {
