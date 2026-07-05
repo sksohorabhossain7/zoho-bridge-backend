@@ -40,7 +40,7 @@ Route::get('/get-inventory-settings', [InventorySettingController::class, 'get']
 
 // Sync Commands & Audit Info
 Route::get('/zoho/sync-now', [SyncController::class, 'syncNow']);
-Route::get('/items', [SyncController::class, 'getZohoItems']);
+Route::get('/zoho/items', [SyncController::class, 'getZohoItems']);
 Route::get('/zoho/logs', [SyncController::class, 'getLogs']);
 Route::get('/metrics', [SyncController::class, 'getMetrics']);
 Route::get('/synced-products', [SyncController::class, 'getSyncedProducts']);
