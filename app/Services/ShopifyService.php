@@ -316,4 +316,53 @@ class ShopifyService
         $result = $this->queryGraphQL($shopDomain, $accessToken, $query);
         return $result['data']['productsCount']['count'] ?? 0;
     }
+
+    /**
+     * Fetch all product IDs from Shopify.
+     *
+     * @param string $shopDomain
+     * @param string $accessToken
+     * @return array
+     * @throws Exception
+     */
+    public function fetchAllProductIds(string $shopDomain, string $accessToken): array
+    {
+        $productIds = [];
+        $cursor = null;
+
+        while (true) {
+            $query = '
+            query products($first: Int!, $after: String) {
+                products(first: $first, after: $after) {
+                    nodes {
+                        id
+                    }
+                    pageInfo {
+                        hasNextPage
+                        endCursor
+                    }
+                }
+            }
+            ';
+
+            $variables = ['first' => 250];
+            if ($cursor) {
+                $variables['after'] = $cursor;
+            }
+
+            $result = $this->queryGraphQL($shopDomain, $accessToken, $query, $variables);
+            $nodes = $result['data']['products']['nodes'] ?? [];
+            foreach ($nodes as $node) {
+                $productIds[] = $node['id'];
+            }
+
+            $hasNextPage = $result['data']['products']['pageInfo']['hasNextPage'] ?? false;
+            if (!$hasNextPage) {
+                break;
+            }
+            $cursor = $result['data']['products']['pageInfo']['endCursor'] ?? null;
+        }
+
+        return $productIds;
+    }
 }

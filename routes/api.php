@@ -42,7 +42,7 @@ Route::get('/get-inventory-settings', [InventorySettingController::class, 'get']
 Route::get('/zoho/sync-now', [SyncController::class, 'syncNow']);
 Route::get('/zoho/items', [SyncController::class, 'getZohoItems']);
 Route::get('/zoho/logs', [SyncController::class, 'getLogs']);
-Route::get('/metrics', [SyncController::class, 'getMetrics']);
+Route::get('/zoho/metrics', [SyncController::class, 'getMetrics']);
 Route::get('/synced-products', [SyncController::class, 'getSyncedProducts']);
 
 // Webhook

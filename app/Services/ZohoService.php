@@ -100,7 +100,7 @@ class ZohoService
      * @return array
      * @throws Exception
      */
-    public function fetchItemsSorted(string $shopDomain, string $orgID): array
+    public function fetchItemsSorted(string $shopDomain, string $orgID, string $status = ''): array
     {
         $token = $this->authService->ensureValidToken($shopDomain);
         $apiDomain = $this->getApiDomain($token);
@@ -111,12 +111,18 @@ class ZohoService
         while (true) {
             $url = rtrim($apiDomain, '/') . '/books/v3/items';
 
-            $response = Http::withHeaders($this->getHeaders($token))->get($url, [
+            $params = [
                 'organization_id' => $orgID,
                 'sort_column' => 'last_modified_time',
                 'sort_order' => 'D', // Descending
                 'page' => $page,
-            ]);
+            ];
+
+            if ($status !== '') {
+                $params['status'] = $status;
+            }
+
+            $response = Http::withHeaders($this->getHeaders($token))->get($url, $params);
 
             if ($response->failed()) {
                 throw new Exception("Zoho fetchItemsSorted error: {$response->status()} - {$response->body()}");

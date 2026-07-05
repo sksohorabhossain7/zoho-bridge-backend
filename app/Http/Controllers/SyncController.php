@@ -188,30 +188,37 @@ class SyncController extends Controller
 
         try {
             $settings = ProductSettings::where('shop', $shopDomain)->first();
-            $syncDirection = $settings ? $settings->syncDirection : 'shopify-to-zoho';
+            $syncDirection = $settings ? $settings->sync_direction : 'shopify-to-zoho';
 
             $token = ZohoToken::where('shop', $shopDomain)->first();
             $hasZohoToken = $token && !empty($token->accessToken);
 
             $totalProducts = 0;
+            $syncedProducts = 0;
 
             if ($syncDirection === 'zoho-to-shopify') {
                 if ($hasZohoToken && !empty($token->organizationID)) {
-                    $totalProducts = $this->zohoService->getItemsCount($shopDomain, $token->organizationID);
+                    $statusFilter = ($settings && !$settings->sync_draft_products) ? 'active' : '';
+                    $zohoItems = $this->zohoService->fetchItemsSorted($shopDomain, $token->organizationID, $statusFilter);
+                    $totalProducts = count($zohoItems);
+
+                    $zohoItemIds = array_column($zohoItems, 'item_id');
+                    $syncedProducts = SyncedProduct::where('shop', $shopDomain)
+                        ->whereIn('zoho_item_id', $zohoItemIds)
+                        ->count();
                 }
             } else {
                 $shopifyToken = $this->shopifyService->getAccessToken($shopDomain);
-                $totalProducts = $this->shopifyService->getProductsCount($shopDomain, $shopifyToken);
+                $shopifyProductIds = $this->shopifyService->fetchAllProductIds($shopDomain, $shopifyToken);
+                $totalProducts = count($shopifyProductIds);
+
+                $syncedProducts = SyncedProduct::where('shop', $shopDomain)
+                    ->whereIn('shopify_product_id', $shopifyProductIds)
+                    ->count();
             }
         } catch (Exception $e) {
-            Log::error("Error fetching metrics total for {$shopDomain}: " . $e->getMessage());
+            Log::error("Error fetching metrics for shop {$shopDomain}: " . $e->getMessage());
             $totalProducts = 0;
-        }
-
-        try {
-            $syncedProducts = SyncedProduct::where('shop', $shopDomain)->count();
-        } catch (Exception $e) {
-            Log::error("Error fetching synced products mapping: " . $e->getMessage());
             $syncedProducts = 0;
         }
 
