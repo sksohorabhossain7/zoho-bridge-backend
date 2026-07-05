@@ -428,4 +428,73 @@ class ZohoService
         $result = $response->json();
         return $result['taxes'] ?? [];
     }
+
+    /**
+     * Fetch a contact by name and type from Zoho Books.
+     *
+     * @param string $shopDomain
+     * @param string $orgID
+     * @param string $contactName
+     * @param string $contactType
+     * @return array|null
+     */
+    public function fetchContactByName(string $shopDomain, string $orgID, string $contactName, string $contactType = 'vendor'): ?array
+    {
+        $token = $this->authService->ensureValidToken($shopDomain);
+        $apiDomain = $this->getApiDomain($token);
+
+        $url = rtrim($apiDomain, '/') . '/books/v3/contacts';
+
+        $response = Http::withHeaders($this->getHeaders($token))
+            ->withQueryParameters([
+                'organization_id' => $orgID,
+                'contact_name' => $contactName,
+                'contact_type' => $contactType,
+            ])
+            ->get($url);
+
+        if ($response->failed()) {
+            Log::error("Zoho fetchContactByName API error: {$response->status()} - {$response->body()}");
+            return null;
+        }
+
+        $result = $response->json();
+        $contacts = $result['contacts'] ?? [];
+
+        foreach ($contacts as $contact) {
+            if (strtolower($contact['contact_name'] ?? '') === strtolower($contactName)) {
+                return $contact;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Create a new contact in Zoho Books.
+     *
+     * @param string $shopDomain
+     * @param string $orgID
+     * @param array $contactData
+     * @return array|null
+     */
+    public function createContact(string $shopDomain, string $orgID, array $contactData): ?array
+    {
+        $token = $this->authService->ensureValidToken($shopDomain);
+        $apiDomain = $this->getApiDomain($token);
+
+        $url = rtrim($apiDomain, '/') . '/books/v3/contacts';
+
+        $response = Http::withHeaders($this->getHeaders($token))
+            ->withQueryParameters(['organization_id' => $orgID])
+            ->post($url, $contactData);
+
+        if ($response->failed()) {
+            Log::error("Zoho createContact API error: {$response->status()} - {$response->body()}");
+            return null;
+        }
+
+        $result = $response->json();
+        return $result['contact'] ?? null;
+    }
 }

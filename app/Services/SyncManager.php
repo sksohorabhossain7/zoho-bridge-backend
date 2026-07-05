@@ -311,6 +311,14 @@ class SyncManager
                     $itemInput['rate'] = (float) $variant['price'];
                 }
 
+                $exportFields = $settings->export_fields ?? ['Price', 'Title', 'Description', 'Cost'];
+                if (in_array('Vendor', $exportFields) && !empty($product['vendor'])) {
+                    $vendorId = $this->getOrCreateZohoVendorId($token, $product['vendor']);
+                    if ($vendorId) {
+                        $itemInput['vendor_id'] = $vendorId;
+                    }
+                }
+
                 if (isset($product['descriptionHtml'])) {
                     $desc = strip_tags($product['descriptionHtml']);
                     $itemInput['description'] = strlen($desc) > 2000 ? substr($desc, 0, 2000) : $desc;
@@ -633,6 +641,14 @@ class SyncManager
                 $itemInput['tax_id'] = $token->tax_type;
             }
 
+            $exportFields = $settings->export_fields ?? ['Price', 'Title', 'Description', 'Cost'];
+            if (in_array('Vendor', $exportFields) && !empty($payload['vendor'])) {
+                $vendorId = $this->getOrCreateZohoVendorId($token, $payload['vendor']);
+                if ($vendorId) {
+                    $itemInput['vendor_id'] = $vendorId;
+                }
+            }
+
             try {
                 if (!$synced) {
                     $existingZohoItem = $this->zohoService->fetchItemBySku($token->shop, $token->organizationID, $sku);
@@ -678,6 +694,42 @@ class SyncManager
                 continue;
             }
         }
+    }
+
+    /**
+     * Map a Shopify product's vendor name to a Zoho Books contact vendor_id.
+     * Creates the vendor contact in Zoho Books if it doesn't already exist.
+     *
+     * @param ZohoToken $token
+     * @param string $vendorName
+     * @return string|null
+     */
+    private function getOrCreateZohoVendorId(ZohoToken $token, string $vendorName): ?string
+    {
+        if (empty(trim($vendorName))) {
+            return null;
+        }
+
+        try {
+            $contact = $this->zohoService->fetchContactByName($token->shop, $token->organizationID, $vendorName, 'vendor');
+            if ($contact && !empty($contact['contact_id'])) {
+                return $contact['contact_id'];
+            }
+
+            $newContact = $this->zohoService->createContact($token->shop, $token->organizationID, [
+                'contact_name' => $vendorName,
+                'contact_type' => 'vendor',
+            ]);
+
+            if ($newContact && !empty($newContact['contact_id'])) {
+                Log::info("Created new Zoho vendor contact for mapping: {$vendorName} (ID: {$newContact['contact_id']})");
+                return $newContact['contact_id'];
+            }
+        } catch (Exception $e) {
+            Log::error("Failed to map/create Zoho vendor contact for {$vendorName}: " . $e->getMessage());
+        }
+
+        return null;
     }
 
     /**

@@ -9,6 +9,7 @@ use App\Models\SyncLog;
 use App\Services\SyncManager;
 use App\Services\ZohoService;
 use App\Services\ShopifyService;
+use App\Jobs\SyncProductsJob;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Log;
@@ -51,22 +52,13 @@ class SyncController extends Controller
         }
 
         try {
-            if (!empty($zohoItemID)) {
-                $this->syncManager->syncSingleZohoItem($token, $zohoItemID);
-            } else {
-                $settings = ProductSettings::where('shop', $token->shop)->first();
-                if ($settings && $settings->sync_direction === 'shopify-to-zoho') {
-                    $this->syncManager->syncShopifyProductsToZoho($token);
-                } else {
-                    $this->syncManager->syncShopProducts($token);
-                }
-            }
+            SyncProductsJob::dispatch($shopDomain, $zohoItemID);
 
             return response()->json([
-                'message' => 'Sync completed successfully',
+                'message' => 'Sync job has been dispatched and is processing in the background.',
             ]);
         } catch (Exception $e) {
-            Log::error("Failed to perform syncNow: " . $e->getMessage());
+            Log::error("Failed to dispatch SyncProductsJob: " . $e->getMessage());
             return response()->json(['error' => $e->getMessage()], 500);
         }
     }

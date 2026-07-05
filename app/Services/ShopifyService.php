@@ -210,6 +210,7 @@ class ShopifyService
                 nodes {
                     id
                     title
+                    vendor
                     descriptionHtml
                     status
                     tags
