@@ -697,6 +697,166 @@ class SyncManager
     }
 
     /**
+     * Sync a single Shopify product into Zoho.
+     *
+     * @param ZohoToken $token
+     * @param string $shopifyProductId
+     * @return void
+     * @throws Exception
+     */
+    public function syncSingleShopifyProductById(ZohoToken $token, string $shopifyProductId): void
+    {
+        $shopifyToken = $this->shopifyService->getAccessToken($token->shop);
+        if (!str_starts_with($shopifyProductId, 'gid://')) {
+            $shopifyProductId = 'gid://shopify/Product/' . $shopifyProductId;
+        }
+
+        $products = $this->shopifyService->fetchProducts($token->shop, $shopifyToken, "id:{$shopifyProductId}");
+        if (empty($products)) {
+            throw new Exception("Shopify product not found: {$shopifyProductId}");
+        }
+
+        $product = $products[0];
+        $settings = ProductSettings::where('shop', $token->shop)->first();
+        if (!$settings) {
+            throw new Exception("Product settings not found for shop: {$token->shop}");
+        }
+
+        $skuMapping = $token->sku_mapping ?? 'sku';
+
+        $variants = $product['variants']['nodes'] ?? [];
+        foreach ($variants as $variant) {
+            $variantId = $variant['id'];
+            $sku = $variant[$skuMapping] ?? '';
+            if ($skuMapping === 'sku' && empty($sku)) {
+                $sku = $variant['barcode'] ?? '';
+            }
+
+            if (empty($sku)) {
+                $this->createLog($token->shop, 'product', 'warning', "Skipping variant sync: missing SKU/Barcode identifier matching settings ({$skuMapping})", "Variant ID: {$variantId}");
+                continue;
+            }
+
+            $synced = SyncedProduct::where('shop', $token->shop)
+                ->where('shopify_variant_id', $variantId)
+                ->first();
+
+            $variantTitle = $variant['title'] ?? 'Default Title';
+            $itemName = $variantTitle !== 'Default Title' ? "{$product['title']} - {$variantTitle}" : $product['title'];
+
+            if (strlen($itemName) > 100) {
+                $itemName = substr($itemName, 0, 100);
+            }
+
+            $itemInput = [
+                'name' => $itemName,
+                'sku' => $sku,
+                'rate' => 0.0,
+            ];
+
+            $customFields = [];
+            if ($skuMapping === 'variant_id' && !empty($token->zoho_custom_field)) {
+                $numericId = (string) basename($variant['id']);
+                if (is_numeric($token->zoho_custom_field)) {
+                    $fieldKey = 'customfield_id';
+                } elseif (str_starts_with($token->zoho_custom_field, 'cf_')) {
+                    $fieldKey = 'api_name';
+                } else {
+                    $fieldKey = 'label';
+                }
+                $customFields[] = [
+                    $fieldKey => $token->zoho_custom_field,
+                    'value' => $numericId
+                ];
+            }
+            if (!empty($customFields)) {
+                $itemInput['custom_fields'] = $customFields;
+            }
+
+            if (isset($variant['price'])) {
+                $itemInput['rate'] = (float) $variant['price'];
+            }
+
+            $exportFields = $settings->export_fields ?? ['Price', 'Title', 'Description', 'Cost'];
+            if (in_array('Vendor', $exportFields) && !empty($product['vendor'])) {
+                $vendorId = $this->getOrCreateZohoVendorId($token, $product['vendor']);
+                if ($vendorId) {
+                    $itemInput['vendor_id'] = $vendorId;
+                }
+            }
+
+            if (isset($product['descriptionHtml'])) {
+                $desc = strip_tags($product['descriptionHtml']);
+                $itemInput['description'] = strlen($desc) > 2000 ? substr($desc, 0, 2000) : $desc;
+            }
+
+            $inventoryItem = $variant['inventoryItem'] ?? [];
+            $tracked = $inventoryItem['tracked'] ?? false;
+            $itemInput['item_type'] = $tracked ? 'inventory' : 'sales_and_purchases';
+
+            if ($tracked) {
+                $itemInput['inventory_account_id'] = $token->inventory_account ?? '';
+            }
+
+            $itemInput['purchase_description'] = $itemInput['description'] ?? '';
+            $itemInput['purchase_rate'] = (float) ($inventoryItem['unitCost']['amount'] ?? 0.0);
+
+            if (!empty($token->purchase_account)) {
+                $itemInput['purchase_account_id'] = $token->purchase_account;
+            }
+            if (!empty($token->sales_account)) {
+                $itemInput['account_id'] = $token->sales_account;
+            }
+
+            if (!empty($token->enable_fixed_tax) && !empty($token->tax_type)) {
+                $itemInput['tax_id'] = $token->tax_type;
+            }
+
+            try {
+                if (!$synced) {
+                    $existingZohoItem = $this->zohoService->fetchItemBySku($token->shop, $token->organizationID, $sku);
+                    if ($existingZohoItem) {
+                        $synced = SyncedProduct::create([
+                            'shop' => $token->shop,
+                            'zoho_item_id' => $existingZohoItem['item_id'],
+                            'shopify_product_id' => $product['id'],
+                            'shopify_variant_id' => $variantId,
+                            'title' => $product['title'],
+                            'sku' => $sku,
+                            'last_sync_source' => 'shopify',
+                            'last_sync_at' => \Carbon\Carbon::now('UTC'),
+                        ]);
+                    }
+                }
+
+                if (!$synced) {
+                    $zohoItem = $this->zohoService->createItem($token->shop, $token->organizationID, $itemInput);
+
+                    SyncedProduct::create([
+                        'shop' => $token->shop,
+                        'zoho_item_id' => $zohoItem['item_id'],
+                        'shopify_product_id' => $product['id'],
+                        'shopify_variant_id' => $variantId,
+                        'title' => $product['title'],
+                        'sku' => $sku,
+                        'last_sync_source' => 'shopify',
+                        'last_sync_at' => \Carbon\Carbon::now('UTC'),
+                    ]);
+                } else {
+                    $this->zohoService->updateItem($token->shop, $token->organizationID, $synced->zoho_item_id, $itemInput);
+
+                    $synced->last_sync_source = 'shopify';
+                    $synced->last_sync_at = \Carbon\Carbon::now('UTC');
+                    $synced->save();
+                }
+            } catch (Exception $e) {
+                Log::error("Failed to sync single Shopify product variant {$sku} to Zoho: " . $e->getMessage());
+                throw $e;
+            }
+        }
+    }
+
+    /**
      * Map a Shopify product's vendor name to a Zoho Books contact vendor_id.
      * Creates the vendor contact in Zoho Books if it doesn't already exist.
      *

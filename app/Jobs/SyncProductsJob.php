@@ -47,10 +47,15 @@ class SyncProductsJob implements ShouldQueue
             throw new Exception("Shop not found or not connected to Zoho: {$this->shopDomain}");
         }
 
+        $settings = ProductSettings::where('shop', $token->shop)->first();
+
         if (!empty($this->zohoItemID)) {
-            $syncManager->syncSingleZohoItem($token, $this->zohoItemID);
+            if ($settings && $settings->sync_direction === 'shopify-to-zoho') {
+                $syncManager->syncSingleShopifyProductById($token, $this->zohoItemID);
+            } else {
+                $syncManager->syncSingleZohoItem($token, $this->zohoItemID);
+            }
         } else {
-            $settings = ProductSettings::where('shop', $token->shop)->first();
             if ($settings && $settings->sync_direction === 'shopify-to-zoho') {
                 $syncManager->syncShopifyProductsToZoho($token);
             } else {
