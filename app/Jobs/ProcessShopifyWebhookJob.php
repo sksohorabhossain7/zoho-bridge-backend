@@ -59,6 +59,9 @@ class ProcessShopifyWebhookJob implements ShouldQueue
         if (in_array($this->topic, ['products/create', 'products/update', 'PRODUCTS_CREATE', 'PRODUCTS_UPDATE'])) {
             $syncManager->syncSingleShopifyProduct($token, $this->payload);
             Log::info("Job finished: Successfully synced Shopify product variant changes to Zoho.");
+        } elseif (in_array($this->topic, ['customers/create', 'customers/update', 'CUSTOMERS_CREATE', 'CUSTOMERS_UPDATE'])) {
+            $syncManager->syncSingleShopifyCustomer($token, $this->payload);
+            Log::info("Job finished: Successfully synced Shopify customer changes to Zoho.");
         } else {
             Log::warning("Job skipped: Unhandled webhook topic {$this->topic}");
         }

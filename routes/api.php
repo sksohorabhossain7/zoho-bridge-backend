@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\ProductSettingController;
 use App\Http\Controllers\InventorySettingController;
+use App\Http\Controllers\CustomerSettingController;
 use App\Http\Controllers\SyncController;
 use App\Http\Controllers\WebhookController;
 use App\Http\Controllers\ZohoAuthController;
@@ -20,6 +21,7 @@ use Illuminate\Support\Facades\Route;
 
 // Webhooks
 Route::post('/webhooks/shopify/product', [SyncController::class, 'handleShopifyWebhook']);
+Route::post('/webhooks/shopify/customer', [SyncController::class, 'handleShopifyWebhook']);
 
 // Zoho Authentication & Org Connect
 Route::get('/zoho/status', [ZohoAuthController::class, 'status']);
@@ -37,6 +39,10 @@ Route::get('/get-product-settings', [ProductSettingController::class, 'get']);
 // Inventory Settings
 Route::post('/update-inventory-settings', [InventorySettingController::class, 'update']);
 Route::get('/get-inventory-settings', [InventorySettingController::class, 'get']);
+
+// Customer Settings
+Route::post('/update-customer-settings', [CustomerSettingController::class, 'update']);
+Route::get('/get-customer-settings', [CustomerSettingController::class, 'get']);
 
 // Sync Commands & Audit Info
 Route::get('/zoho/sync-now', [SyncController::class, 'syncNow']);

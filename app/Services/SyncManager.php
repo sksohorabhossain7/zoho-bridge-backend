@@ -503,6 +503,75 @@ class SyncManager
     }
 
     /**
+     * Process a single Shopify customer webhook payload.
+     *
+     * @param ZohoToken $token
+     * @param array $payload
+     * @return void
+     * @throws Exception
+     */
+    public function syncSingleShopifyCustomer(ZohoToken $token, array $payload): void
+    {
+        $settings = \App\Models\CustomerSettings::where('shop', $token->shop)->first();
+        if (!$settings) {
+            Log::info("Skipping customer sync: Customer settings not found for shop {$token->shop}");
+            return;
+        }
+
+        if ($settings->sync_direction !== 'shopify-to-zoho') {
+            Log::info("Skipping customer sync: Sync direction is not shopify-to-zoho");
+            return;
+        }
+
+        if (!$settings->enable_customer_sync_shopify_to_zoho) {
+            Log::info("Skipping customer sync: Customer sync from Shopify to Zoho is disabled");
+            return;
+        }
+
+        $email = $payload['email'] ?? '';
+        if (empty($email)) {
+            Log::warning("Skipping customer sync: Customer webhook payload has no email address.");
+            return;
+        }
+
+        $firstName = $payload['first_name'] ?? '';
+        $lastName = $payload['last_name'] ?? '';
+        $phone = $payload['phone'] ?? '';
+
+        $contactName = trim($firstName . ' ' . $lastName);
+        if (empty($contactName)) {
+            $contactName = $email;
+        }
+
+        $contactData = [
+            'contact_name' => $contactName,
+            'contact_type' => 'customer',
+            'email' => $email,
+            'phone' => $phone,
+        ];
+
+        if ($settings->sync_shopify_customer_tags && !empty($payload['tags'])) {
+            $contactData['notes'] = 'Shopify Tags: ' . $payload['tags'];
+        }
+
+        try {
+            $existing = $this->zohoService->fetchContactByEmail($token->shop, $token->organizationID, $email);
+
+            if ($existing && !empty($existing['contact_id'])) {
+                $this->zohoService->updateContact($token->shop, $token->organizationID, $existing['contact_id'], $contactData);
+                $this->createLog($token->shop, 'customer_sync_webhook', 'success', "Updated customer in Zoho from webhook: {$contactName} ({$email})", '');
+            } else {
+                $this->zohoService->createContact($token->shop, $token->organizationID, $contactData);
+                $this->createLog($token->shop, 'customer_sync_webhook', 'success', "Created customer in Zoho from webhook: {$contactName} ({$email})", '');
+            }
+        } catch (Exception $e) {
+            Log::error("Failed in customer webhook sync for {$email}: " . $e->getMessage());
+            $this->createLog($token->shop, 'customer_sync_webhook', 'error', "Failed in customer webhook sync for {$contactName} ({$email})", $e->getMessage());
+            throw $e;
+        }
+    }
+
+    /**
      * Process a single Shopify webhook payload.
      *
      * @param ZohoToken $token

@@ -503,4 +503,72 @@ class ZohoService
         $result = $response->json();
         return $result['contact'] ?? null;
     }
+
+    /**
+     * Fetch a contact by email from Zoho Books.
+     *
+     * @param string $shopDomain
+     * @param string $orgID
+     * @param string $email
+     * @return array|null
+     */
+    public function fetchContactByEmail(string $shopDomain, string $orgID, string $email): ?array
+    {
+        $token = $this->authService->ensureValidToken($shopDomain);
+        $apiDomain = $this->getApiDomain($token);
+
+        $url = rtrim($apiDomain, '/') . '/books/v3/contacts';
+
+        $response = Http::withHeaders($this->getHeaders($token))
+            ->withQueryParameters([
+                'organization_id' => $orgID,
+                'email' => $email,
+            ])
+            ->get($url);
+
+        if ($response->failed()) {
+            Log::error("Zoho fetchContactByEmail API error: {$response->status()} - {$response->body()}");
+            return null;
+        }
+
+        $result = $response->json();
+        $contacts = $result['contacts'] ?? [];
+
+        foreach ($contacts as $contact) {
+            if (strtolower($contact['email'] ?? '') === strtolower($email)) {
+                return $contact;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Update a contact in Zoho Books.
+     *
+     * @param string $shopDomain
+     * @param string $orgID
+     * @param string $contactId
+     * @param array $contactData
+     * @return array|null
+     */
+    public function updateContact(string $shopDomain, string $orgID, string $contactId, array $contactData): ?array
+    {
+        $token = $this->authService->ensureValidToken($shopDomain);
+        $apiDomain = $this->getApiDomain($token);
+
+        $url = rtrim($apiDomain, '/') . '/books/v3/contacts/' . $contactId;
+
+        $response = Http::withHeaders($this->getHeaders($token))
+            ->withQueryParameters(['organization_id' => $orgID])
+            ->put($url, $contactData);
+
+        if ($response->failed()) {
+            Log::error("Zoho updateContact API error: {$response->status()} - {$response->body()}");
+            return null;
+        }
+
+        $result = $response->json();
+        return $result['contact'] ?? null;
+    }
 }
