@@ -530,7 +530,7 @@ class SyncManager
 
         $shopifyCustomerId = "gid://shopify/Customer/" . ($payload['id'] ?? '');
         $email = $payload['email'] ?? '';
-        $phone = $payload['phone'] ?? '';
+        $phone = $this->formatPhoneForZoho($payload['phone'] ?? '');
         $firstName = $payload['first_name'] ?? '';
         $lastName = $payload['last_name'] ?? '';
 
@@ -561,6 +561,7 @@ class SyncManager
         $contactData = [
             'contact_name' => $contactName,
             'contact_type' => 'customer',
+            'customer_sub_type' => 'individual',
         ];
 
         // Map Company Name
@@ -583,6 +584,8 @@ class SyncManager
                 $attention = $contactName;
             }
 
+            $addressPhone = $this->formatPhoneForZoho($defaultAddress['phone'] ?? '');
+
             $addressData = [
                 'attention' => $attention,
                 'address' => $defaultAddress['address1'] ?? '',
@@ -591,15 +594,11 @@ class SyncManager
                 'state' => $defaultAddress['province'] ?? '',
                 'zip' => $defaultAddress['zip'] ?? '',
                 'country' => $defaultAddress['country'] ?? '',
-                'phone' => $defaultAddress['phone'] ?? '',
+                'phone' => $addressPhone,
             ];
 
             $contactData['billing_address'] = $addressData;
             $contactData['shipping_address'] = $addressData;
-        }
-
-        if ($settings->sync_shopify_customer_tags && !empty($payload['tags'])) {
-            $contactData['notes'] = 'Shopify Tags: ' . $payload['tags'];
         }
 
         try {
@@ -613,6 +612,8 @@ class SyncManager
 
             if ($syncedCustomer) {
                 $zohoContactId = $syncedCustomer->zoho_contact_id;
+                // Fetch contact details from Zoho to get primary_contact_id
+                $existing = $this->zohoService->fetchContactById($token->shop, $token->organizationID, $zohoContactId);
             } else {
                 // 2. Fallback to searching Zoho by email
                 if (!empty($email)) {
@@ -628,15 +629,79 @@ class SyncManager
                 }
             }
 
+            // Ensure we have full details including primary_contact_id if contact exists
+            if ($zohoContactId && (!$existing || empty($existing['primary_contact_id']))) {
+                $existing = $this->zohoService->fetchContactById($token->shop, $token->organizationID, $zohoContactId);
+            }
+
+            // Build Contact Person Data
+            $contactPerson = [
+                'first_name' => $firstName,
+                'last_name' => $lastName,
+                'is_primary_contact' => true,
+            ];
+            if (!empty($email)) {
+                $contactPerson['email'] = $email;
+            }
+            if (!empty($phone)) {
+                $contactPerson['phone'] = $phone;
+            }
+
+            // If we have an existing Zoho contact, attach the primary contact person ID to update it
+            if ($existing) {
+                $primaryContactPersonId = $existing['primary_contact_id'] ?? null;
+                if ($primaryContactPersonId) {
+                    $contactPerson['contact_person_id'] = $primaryContactPersonId;
+                }
+            }
+
+            $contactData['contact_persons'] = [$contactPerson];
+
             if ($zohoContactId) {
                 // Update existing Zoho Contact
                 $this->zohoService->updateContact($token->shop, $token->organizationID, $zohoContactId, $contactData);
+
+                // Update the primary contact person details directly
+                $primaryContactPersonId = $existing['primary_contact_id'] ?? null;
+                if ($primaryContactPersonId) {
+                    $contactPersonPayload = [
+                        'contact_id' => $zohoContactId,
+                        'first_name' => $firstName,
+                        'last_name' => $lastName,
+                    ];
+                    if (!empty($email)) {
+                        $contactPersonPayload['email'] = $email;
+                    }
+                    if (!empty($phone)) {
+                        $contactPersonPayload['phone'] = $phone;
+                    }
+                    $this->zohoService->updateContactPerson($token->shop, $token->organizationID, $primaryContactPersonId, $contactPersonPayload);
+                }
+
                 $this->createLog($token->shop, 'customer_sync_webhook', 'success', "Updated customer in Zoho from webhook: {$contactName} (ID: {$zohoContactId})", '');
             } else {
                 // Create new Zoho Contact
                 $newContact = $this->zohoService->createContact($token->shop, $token->organizationID, $contactData);
                 if ($newContact && !empty($newContact['contact_id'])) {
                     $zohoContactId = $newContact['contact_id'];
+
+                    // Update the newly created primary contact person details
+                    $primaryContactPersonId = $newContact['primary_contact_id'] ?? null;
+                    if ($primaryContactPersonId) {
+                        $contactPersonPayload = [
+                            'contact_id' => $zohoContactId,
+                            'first_name' => $firstName,
+                            'last_name' => $lastName,
+                        ];
+                        if (!empty($email)) {
+                            $contactPersonPayload['email'] = $email;
+                        }
+                        if (!empty($phone)) {
+                            $contactPersonPayload['phone'] = $phone;
+                        }
+                        $this->zohoService->updateContactPerson($token->shop, $token->organizationID, $primaryContactPersonId, $contactPersonPayload);
+                    }
+
                     $this->createLog($token->shop, 'customer_sync_webhook', 'success', "Created customer in Zoho from webhook: {$contactName} (ID: {$zohoContactId})", '');
                 } else {
                     throw new Exception("Failed to create customer in Zoho Books.");
@@ -1052,6 +1117,50 @@ class SyncManager
         }
 
         return null;
+    }
+
+    /**
+     * Format phone number to split country code from the rest of the digits using hyphen.
+     * This allows Zoho Books UI to correctly parse and populate the country code dropdown
+     * and avoid validation errors regarding special characters.
+     *
+     * @param string|null $phone
+     * @return string
+     */
+    private function formatPhoneForZoho(?string $phone): string
+    {
+        if (empty($phone)) {
+            return '';
+        }
+
+        $cleaned = preg_replace('/[^\d+]/', '', $phone);
+        if (empty($cleaned)) {
+            return '';
+        }
+
+        if (str_starts_with($cleaned, '+')) {
+            $digits = substr($cleaned, 1);
+
+            // List of calling codes sorted by length desc to match longest prefix first
+            $callingCodes = [
+                '1242', '1246', '1264', '1268', '1284', '1340', '1345', '1441', '1473', '1649', '1664', '1721', '1758', '1767', '1784', '1809', '1829', '1849', '1868', '1869', '1876',
+                '211', '212', '213', '216', '218', '220', '221', '222', '223', '224', '225', '226', '227', '228', '229', '230', '231', '232', '233', '234', '235', '236', '237', '238', '239', '240', '241', '242', '243', '244', '245', '246', '247', '248', '249', '250', '251', '252', '253', '254', '255', '256', '257', '258', '260', '261', '262', '263', '264', '265', '266', '267', '268', '269', '290', '291', '297', '298', '299',
+                '350', '351', '352', '353', '354', '355', '356', '357', '358', '359', '370', '371', '372', '373', '374', '375', '376', '377', '378', '380', '381', '382', '383', '385', '386', '387', '389', '420', '421', '423', '500', '501', '502', '503', '504', '505', '506', '507', '508', '509', '590', '591', '592', '593', '594', '595', '596', '597', '598', '599',
+                '670', '672', '673', '674', '675', '676', '677', '678', '679', '680', '681', '682', '683', '685', '686', '687', '688', '689', '690', '691', '692',
+                '850', '852', '853', '855', '856', '880', '886', '960', '961', '962', '963', '964', '965', '966', '967', '968', '970', '971', '972', '973', '974', '975', '976', '977', '992', '993', '994', '995', '996', '998',
+                '20', '27', '30', '31', '32', '33', '34', '36', '39', '40', '41', '43', '44', '45', '46', '47', '48', '49', '51', '52', '53', '54', '55', '56', '57', '58', '60', '61', '62', '63', '64', '65', '66', '81', '82', '84', '86', '90', '92', '93', '94', '95', '98',
+                '1', '7'
+            ];
+
+            foreach ($callingCodes as $code) {
+                if (str_starts_with($digits, $code)) {
+                    $localNumber = substr($digits, strlen($code));
+                    return '+' . $code . '-' . $localNumber;
+                }
+            }
+        }
+
+        return $cleaned;
     }
 
     /**

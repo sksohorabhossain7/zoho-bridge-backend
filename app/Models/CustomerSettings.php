@@ -12,14 +12,10 @@ class CustomerSettings extends Model
         'sync_option',
         'enable_customer_sync_shopify_to_zoho',
         'enable_customer_sync_zoho_to_shopify',
-        'sync_shopify_customer_tags',
-        'sync_zoho_customer_tags',
     ];
 
     protected $casts = [
         'enable_customer_sync_shopify_to_zoho' => 'boolean',
         'enable_customer_sync_zoho_to_shopify' => 'boolean',
-        'sync_shopify_customer_tags' => 'boolean',
-        'sync_zoho_customer_tags' => 'boolean',
     ];
 }

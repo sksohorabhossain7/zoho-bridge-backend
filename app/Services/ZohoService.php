@@ -43,6 +43,7 @@ class ZohoService
         return [
             'Authorization' => 'Zoho-oauthtoken ' . $token->accessToken,
             'Content-Type' => 'application/json',
+            'X-Shop-Domain' => $token->shop,
         ];
     }
 
@@ -586,6 +587,34 @@ class ZohoService
     }
 
     /**
+     * Fetch a contact by ID from Zoho Books.
+     *
+     * @param string $shopDomain
+     * @param string $orgID
+     * @param string $contactId
+     * @return array|null
+     */
+    public function fetchContactById(string $shopDomain, string $orgID, string $contactId): ?array
+    {
+        $token = $this->authService->ensureValidToken($shopDomain);
+        $apiDomain = $this->getApiDomain($token);
+
+        $url = rtrim($apiDomain, '/') . '/books/v3/contacts/' . $contactId;
+
+        $response = Http::withHeaders($this->getHeaders($token))
+            ->withQueryParameters(['organization_id' => $orgID])
+            ->get($url);
+
+        if ($response->failed()) {
+            Log::error("Zoho fetchContactById API error: {$response->status()} - {$response->body()}");
+            return null;
+        }
+
+        $result = $response->json();
+        return $result['contact'] ?? null;
+    }
+
+    /**
      * Update a contact in Zoho Books.
      *
      * @param string $shopDomain
@@ -612,5 +641,34 @@ class ZohoService
 
         $result = $response->json();
         return $result['contact'] ?? null;
+    }
+
+    /**
+     * Update a contact person in Zoho Books.
+     *
+     * @param string $shopDomain
+     * @param string $orgID
+     * @param string $contactPersonId
+     * @param array $contactPersonData
+     * @return array|null
+     */
+    public function updateContactPerson(string $shopDomain, string $orgID, string $contactPersonId, array $contactPersonData): ?array
+    {
+        $token = $this->authService->ensureValidToken($shopDomain);
+        $apiDomain = $this->getApiDomain($token);
+
+        $url = rtrim($apiDomain, '/') . '/books/v3/contacts/contactpersons/' . $contactPersonId;
+
+        $response = Http::withHeaders($this->getHeaders($token))
+            ->withQueryParameters(['organization_id' => $orgID])
+            ->put($url, $contactPersonData);
+
+        if ($response->failed()) {
+            Log::error("Zoho updateContactPerson API error: {$response->status()} - {$response->body()}");
+            return null;
+        }
+
+        $result = $response->json();
+        return $result['contact_person'] ?? null;
     }
 }

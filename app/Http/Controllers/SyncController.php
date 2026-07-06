@@ -186,6 +186,7 @@ class SyncController extends Controller
             return response()->json(['error' => 'Missing shop domain parameter'], 400);
         }
 
+        $token = null;
         try {
             $settings = ProductSettings::where('shop', $shopDomain)->first();
             $syncDirection = $settings ? $settings->sync_direction : 'shopify-to-zoho';
@@ -227,6 +228,10 @@ class SyncController extends Controller
                 'synced' => $syncedProducts,
                 'total' => $totalProducts,
             ],
+            'api_usage' => [
+                'limit' => $token ? (int) $token->api_calls_limit : 0,
+                'remaining' => $token ? (int) $token->api_calls_remaining : 0,
+            ]
         ]);
     }
 

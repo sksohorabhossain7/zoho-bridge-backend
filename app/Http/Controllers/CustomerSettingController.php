@@ -25,8 +25,6 @@ class CustomerSettingController extends Controller
                 'sync_option' => 'nullable|string',
                 'enable_customer_sync_shopify_to_zoho' => 'nullable|boolean',
                 'enable_customer_sync_zoho_to_shopify' => 'nullable|boolean',
-                'sync_shopify_customer_tags' => 'nullable|boolean',
-                'sync_zoho_customer_tags' => 'nullable|boolean',
             ]);
         } catch (Exception $e) {
             return response()->json(['error' => 'Invalid request data: ' . $e->getMessage()], 400);
@@ -74,8 +72,6 @@ class CustomerSettingController extends Controller
                     'sync_option' => 'create_new_and_update_existing',
                     'enable_customer_sync_shopify_to_zoho' => false,
                     'enable_customer_sync_zoho_to_shopify' => false,
-                    'sync_shopify_customer_tags' => false,
-                    'sync_zoho_customer_tags' => false,
                 ]);
             }
 

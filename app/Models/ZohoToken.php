@@ -23,6 +23,8 @@ class ZohoToken extends Model
         'sale_invoice_journal',
         'enable_fixed_tax',
         'tax_type',
+        'api_calls_limit',
+        'api_calls_remaining',
     ];
 
     /**
@@ -41,6 +43,8 @@ class ZohoToken extends Model
             'lastProductSyncAt' => 'last_product_sync_at',
             'clientId' => 'client_id',
             'clientSecret' => 'client_secret',
+            'apiCallsLimit' => 'api_calls_limit',
+            'apiCallsRemaining' => 'api_calls_remaining',
             default => \Illuminate\Support\Str::snake($key),
         };
     }
@@ -76,6 +80,8 @@ class ZohoToken extends Model
             'sale_invoice_journal' => 'saleInvoiceJournal',
             'enable_fixed_tax' => 'enableFixedTax',
             'tax_type' => 'taxType',
+            'api_calls_limit' => 'apiCallsLimit',
+            'api_calls_remaining' => 'apiCallsRemaining',
         ];
 
         foreach ($camelKeys as $snake => $camel) {
