@@ -544,6 +544,48 @@ class ZohoService
     }
 
     /**
+     * Fetch a contact by phone number from Zoho Books.
+     *
+     * @param string $shopDomain
+     * @param string $orgID
+     * @param string $phone
+     * @return array|null
+     */
+    public function fetchContactByPhone(string $shopDomain, string $orgID, string $phone): ?array
+    {
+        $token = $this->authService->ensureValidToken($shopDomain);
+        $apiDomain = $this->getApiDomain($token);
+
+        $url = rtrim($apiDomain, '/') . '/books/v3/contacts';
+
+        $response = Http::withHeaders($this->getHeaders($token))
+            ->withQueryParameters([
+                'organization_id' => $orgID,
+                'search_text' => $phone,
+            ])
+            ->get($url);
+
+        if ($response->failed()) {
+            Log::error("Zoho fetchContactByPhone API error: {$response->status()} - {$response->body()}");
+            return null;
+        }
+
+        $result = $response->json();
+        $contacts = $result['contacts'] ?? [];
+
+        foreach ($contacts as $contact) {
+            $cPhone = $contact['phone'] ?? '';
+            $cMobile = $contact['mobile'] ?? '';
+            if (str_replace([' ', '-', '(', ')', '+'], '', $cPhone) === str_replace([' ', '-', '(', ')', '+'], '', $phone) ||
+                str_replace([' ', '-', '(', ')', '+'], '', $cMobile) === str_replace([' ', '-', '(', ')', '+'], '', $phone)) {
+                return $contact;
+            }
+        }
+
+        return null;
+    }
+
+    /**
      * Update a contact in Zoho Books.
      *
      * @param string $shopDomain

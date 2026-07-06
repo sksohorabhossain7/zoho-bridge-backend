@@ -528,45 +528,138 @@ class SyncManager
             return;
         }
 
+        $shopifyCustomerId = "gid://shopify/Customer/" . ($payload['id'] ?? '');
         $email = $payload['email'] ?? '';
-        if (empty($email)) {
-            Log::warning("Skipping customer sync: Customer webhook payload has no email address.");
+        $phone = $payload['phone'] ?? '';
+        $firstName = $payload['first_name'] ?? '';
+        $lastName = $payload['last_name'] ?? '';
+
+        if (empty($email) && empty($phone) && empty($firstName) && empty($lastName)) {
+            Log::warning("Skipping customer sync: Customer webhook payload has no identifiers (email, phone, or name). Payload: " . json_encode($payload));
             return;
         }
 
-        $firstName = $payload['first_name'] ?? '';
-        $lastName = $payload['last_name'] ?? '';
-        $phone = $payload['phone'] ?? '';
-
         $contactName = trim($firstName . ' ' . $lastName);
         if (empty($contactName)) {
-            $contactName = $email;
+            $contactName = !empty($email) ? $email : (!empty($phone) ? $phone : 'Shopify Customer ' . ($payload['id'] ?? ''));
+        }
+
+        // Extract default address
+        $defaultAddress = $payload['default_address'] ?? null;
+        if (!$defaultAddress && !empty($payload['addresses'])) {
+            foreach ($payload['addresses'] as $addr) {
+                if (!empty($addr['default'])) {
+                    $defaultAddress = $addr;
+                    break;
+                }
+            }
+            if (!$defaultAddress) {
+                $defaultAddress = $payload['addresses'][0];
+            }
         }
 
         $contactData = [
             'contact_name' => $contactName,
             'contact_type' => 'customer',
-            'email' => $email,
-            'phone' => $phone,
         ];
+
+        // Map Company Name
+        $companyName = $payload['company'] ?? ($defaultAddress['company'] ?? '');
+        if (!empty($companyName)) {
+            $contactData['company_name'] = $companyName;
+        }
+
+        if (!empty($email)) {
+            $contactData['email'] = $email;
+        }
+        if (!empty($phone)) {
+            $contactData['phone'] = $phone;
+        }
+
+        // Map Address Data
+        if ($defaultAddress) {
+            $attention = trim(($defaultAddress['first_name'] ?? '') . ' ' . ($defaultAddress['last_name'] ?? ''));
+            if (empty($attention)) {
+                $attention = $contactName;
+            }
+
+            $addressData = [
+                'attention' => $attention,
+                'address' => $defaultAddress['address1'] ?? '',
+                'street2' => $defaultAddress['address2'] ?? '',
+                'city' => $defaultAddress['city'] ?? '',
+                'state' => $defaultAddress['province'] ?? '',
+                'zip' => $defaultAddress['zip'] ?? '',
+                'country' => $defaultAddress['country'] ?? '',
+                'phone' => $defaultAddress['phone'] ?? '',
+            ];
+
+            $contactData['billing_address'] = $addressData;
+            $contactData['shipping_address'] = $addressData;
+        }
 
         if ($settings->sync_shopify_customer_tags && !empty($payload['tags'])) {
             $contactData['notes'] = 'Shopify Tags: ' . $payload['tags'];
         }
 
         try {
-            $existing = $this->zohoService->fetchContactByEmail($token->shop, $token->organizationID, $email);
+            // 1. Check existing mapping in our DB
+            $syncedCustomer = \App\Models\SyncedCustomer::where('shop', $token->shop)
+                ->where('shopify_customer_id', $shopifyCustomerId)
+                ->first();
 
-            if ($existing && !empty($existing['contact_id'])) {
-                $this->zohoService->updateContact($token->shop, $token->organizationID, $existing['contact_id'], $contactData);
-                $this->createLog($token->shop, 'customer_sync_webhook', 'success', "Updated customer in Zoho from webhook: {$contactName} ({$email})", '');
+            $zohoContactId = null;
+            $existing = null;
+
+            if ($syncedCustomer) {
+                $zohoContactId = $syncedCustomer->zoho_contact_id;
             } else {
-                $this->zohoService->createContact($token->shop, $token->organizationID, $contactData);
-                $this->createLog($token->shop, 'customer_sync_webhook', 'success', "Created customer in Zoho from webhook: {$contactName} ({$email})", '');
+                // 2. Fallback to searching Zoho by email
+                if (!empty($email)) {
+                    $existing = $this->zohoService->fetchContactByEmail($token->shop, $token->organizationID, $email);
+                }
+                // 3. Fallback to searching Zoho by phone
+                if (!$existing && !empty($phone)) {
+                    $existing = $this->zohoService->fetchContactByPhone($token->shop, $token->organizationID, $phone);
+                }
+
+                if ($existing && !empty($existing['contact_id'])) {
+                    $zohoContactId = $existing['contact_id'];
+                }
+            }
+
+            if ($zohoContactId) {
+                // Update existing Zoho Contact
+                $this->zohoService->updateContact($token->shop, $token->organizationID, $zohoContactId, $contactData);
+                $this->createLog($token->shop, 'customer_sync_webhook', 'success', "Updated customer in Zoho from webhook: {$contactName} (ID: {$zohoContactId})", '');
+            } else {
+                // Create new Zoho Contact
+                $newContact = $this->zohoService->createContact($token->shop, $token->organizationID, $contactData);
+                if ($newContact && !empty($newContact['contact_id'])) {
+                    $zohoContactId = $newContact['contact_id'];
+                    $this->createLog($token->shop, 'customer_sync_webhook', 'success', "Created customer in Zoho from webhook: {$contactName} (ID: {$zohoContactId})", '');
+                } else {
+                    throw new Exception("Failed to create customer in Zoho Books.");
+                }
+            }
+
+            // 4. Save/update mapping in our DB
+            if ($zohoContactId) {
+                \App\Models\SyncedCustomer::updateOrCreate(
+                    [
+                        'shop' => $token->shop,
+                        'shopify_customer_id' => $shopifyCustomerId,
+                    ],
+                    [
+                        'zoho_contact_id' => $zohoContactId,
+                        'email' => !empty($email) ? $email : null,
+                        'phone' => !empty($phone) ? $phone : null,
+                    ]
+                );
             }
         } catch (Exception $e) {
-            Log::error("Failed in customer webhook sync for {$email}: " . $e->getMessage());
-            $this->createLog($token->shop, 'customer_sync_webhook', 'error', "Failed in customer webhook sync for {$contactName} ({$email})", $e->getMessage());
+            Log::error("Failed in customer webhook sync for Shopify Customer ID " . ($payload['id'] ?? '') . ": " . $e->getMessage());
+            $this->createLog($token->shop, 'customer_sync_webhook', 'error', "Failed in customer webhook sync for {$contactName}", $e->getMessage());
             throw $e;
         }
     }
