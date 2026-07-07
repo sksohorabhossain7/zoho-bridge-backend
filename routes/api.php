@@ -46,6 +46,7 @@ Route::get('/get-customer-settings', [CustomerSettingController::class, 'get']);
 
 // Sync Commands & Audit Info
 Route::get('/zoho/sync-now', [SyncController::class, 'syncNow']);
+Route::post('/zoho/import-customers', [SyncController::class, 'importCustomers']);
 Route::get('/zoho/items', [SyncController::class, 'getZohoItems']);
 Route::get('/zoho/logs', [SyncController::class, 'getLogs']);
 Route::get('/zoho/metrics', [SyncController::class, 'getMetrics']);

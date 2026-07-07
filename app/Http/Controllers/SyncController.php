@@ -256,4 +256,35 @@ class SyncController extends Controller
             return response()->json(['error' => $e->getMessage()], 500);
         }
     }
+
+    /**
+     * Start Zoho to Shopify customer import in the background.
+     *
+     * @param Request $request
+     * @return JsonResponse
+     */
+    public function importCustomers(Request $request): JsonResponse
+    {
+        $shopDomain = $request->query('shop');
+        if (empty($shopDomain)) {
+            return response()->json(['error' => 'Missing shop domain parameter'], 400);
+        }
+
+        $token = ZohoToken::where('shop', $shopDomain)->first();
+        if (!$token) {
+            return response()->json(['error' => 'Shop not found or not connected to Zoho'], 404);
+        }
+
+        try {
+            \App\Jobs\ImportZohoCustomersJob::dispatch($shopDomain);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Customer import job has been dispatched and is processing in the background.',
+            ]);
+        } catch (Exception $e) {
+            Log::error("Failed to dispatch ImportZohoCustomersJob: " . $e->getMessage());
+            return response()->json(['error' => $e->getMessage()], 500);
+        }
+    }
 }

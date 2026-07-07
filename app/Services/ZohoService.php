@@ -671,4 +671,44 @@ class ZohoService
         $result = $response->json();
         return $result['contact_person'] ?? null;
     }
+
+    /**
+     * Fetch contacts paginated from Zoho Books.
+     *
+     * @param string $shopDomain
+     * @param string $orgID
+     * @param int $page
+     * @param int $perPage
+     * @param string $contactType
+     * @return array Array with [contacts, page_context]
+     * @throws Exception
+     */
+    public function fetchContactsPaginated(string $shopDomain, string $orgID, int $page, int $perPage, string $contactType = 'customer'): array
+    {
+        $token = $this->authService->ensureValidToken($shopDomain);
+        $apiDomain = $this->getApiDomain($token);
+
+        $url = rtrim($apiDomain, '/') . '/books/v3/contacts';
+
+        $params = [
+            'organization_id' => $orgID,
+            'page' => $page,
+            'per_page' => $perPage,
+            'contact_type' => $contactType,
+        ];
+
+        $response = Http::withHeaders($this->getHeaders($token))->get($url, $params);
+
+        if ($response->failed()) {
+            Log::error("Zoho fetchContactsPaginated API error: {$response->status()} - {$response->body()}");
+            throw new Exception("Zoho API error: {$response->status()} - {$response->body()}");
+        }
+
+        $result = $response->json();
+
+        return [
+            $result['contacts'] ?? [],
+            $result['page_context'] ?? null,
+        ];
+    }
 }

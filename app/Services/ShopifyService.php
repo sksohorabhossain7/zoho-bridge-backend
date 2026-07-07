@@ -365,4 +365,125 @@ class ShopifyService
 
         return $productIds;
     }
+
+    /**
+     * Search for a customer ID by email in Shopify.
+     *
+     * @param string $shopDomain
+     * @param string $accessToken
+     * @param string $email
+     * @return string|null
+     * @throws Exception
+     */
+    public function findCustomerByEmail(string $shopDomain, string $accessToken, string $email): ?string
+    {
+        $query = <<<'GRAPHQL'
+query ($query: String!) {
+  customers(first: 1, query: $query) {
+    edges {
+      node {
+        id
+      }
+    }
+  }
+}
+GRAPHQL;
+
+        $variables = ['query' => "email:{$email}"];
+        $result = $this->queryGraphQL($shopDomain, $accessToken, $query, $variables);
+        $edges = $result['data']['customers']['edges'] ?? [];
+        if (count($edges) > 0) {
+            return $edges[0]['node']['id'];
+        }
+
+        return null;
+    }
+
+    /**
+     * Create or Update a customer in Shopify.
+     *
+     * @param string $shopDomain
+     * @param string $accessToken
+     * @param array $input
+     * @param string|null $shopifyCustomerId
+     * @return string Shopify Customer ID
+     * @throws Exception
+     */
+    public function syncCustomer(string $shopDomain, string $accessToken, array $input, ?string $shopifyCustomerId = null): string
+    {
+        if (!empty($shopifyCustomerId)) {
+            // Update
+            $query = <<<'GRAPHQL'
+mutation customerUpdate($input: CustomerInput!) {
+  customerUpdate(input: $input) {
+    customer {
+      id
+    }
+    userErrors {
+      field
+      message
+    }
+  }
+}
+GRAPHQL;
+            $input['id'] = $shopifyCustomerId;
+            $variables = ['input' => $input];
+            $result = $this->queryGraphQL($shopDomain, $accessToken, $query, $variables);
+            
+            $userErrors = $result['data']['customerUpdate']['userErrors'] ?? [];
+            if (count($userErrors) > 0) {
+                // If there's an error about phone number, retry without phone
+                $hasPhoneError = false;
+                foreach ($userErrors as $err) {
+                    if (str_contains(strtolower($err['field'][0] ?? ''), 'phone')) {
+                        $hasPhoneError = true;
+                        break;
+                    }
+                }
+                if ($hasPhoneError && isset($input['phone'])) {
+                    unset($input['phone']);
+                    return $this->syncCustomer($shopDomain, $accessToken, $input, $shopifyCustomerId);
+                }
+                throw new Exception("Shopify Customer Update Error: " . $userErrors[0]['message']);
+            }
+            
+            return $result['data']['customerUpdate']['customer']['id'];
+        } else {
+            // Create
+            $query = <<<'GRAPHQL'
+mutation customerCreate($input: CustomerInput!) {
+  customerCreate(input: $input) {
+    customer {
+      id
+    }
+    userErrors {
+      field
+      message
+    }
+  }
+}
+GRAPHQL;
+            $variables = ['input' => $input];
+            $result = $this->queryGraphQL($shopDomain, $accessToken, $query, $variables);
+            
+            $userErrors = $result['data']['customerCreate']['userErrors'] ?? [];
+            if (count($userErrors) > 0) {
+                // If there's an error about phone number, retry without phone
+                $hasPhoneError = false;
+                foreach ($userErrors as $err) {
+                    if (str_contains(strtolower($err['field'][0] ?? ''), 'phone')) {
+                        $hasPhoneError = true;
+                        break;
+                    }
+                }
+                if ($hasPhoneError && isset($input['phone'])) {
+                    unset($input['phone']);
+                    return $this->syncCustomer($shopDomain, $accessToken, $input);
+                }
+                throw new Exception("Shopify Customer Create Error: " . $userErrors[0]['message']);
+            }
+            
+            return $result['data']['customerCreate']['customer']['id'];
+        }
+    }
 }
